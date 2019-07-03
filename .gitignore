@@ -1,0 +1,6 @@
+*.vs
+New Unity Project/Library/
+**/obj
+**/Logs
+MultiWindowPlugin/x64/
+MultiWindowPlugin/lib/
