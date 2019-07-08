@@ -4,3 +4,5 @@ New Unity Project/Library/
 **/Logs
 MultiWindowPlugin/x64/
 MultiWindowPlugin/lib/
+**/Temp
+**/Build
