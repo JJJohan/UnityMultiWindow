@@ -3,4 +3,4 @@
 #include <string>
 
 std::string GetLastErrorAsString(unsigned long errorMessageID);
-void ErrorCheck(std::string event);
+void ErrorCheck(const std::string& event);
