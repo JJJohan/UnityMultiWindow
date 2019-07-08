@@ -4,16 +4,14 @@
 #include <vector>
 #include <algorithm>
 
-static MessageFunction _messageDelegate = nullptr;
-static IUnityInterfaces* _pUnityInterfaces = nullptr;
-static IUnityGraphics* _pGraphicsApi = nullptr;
-static UnityGfxRenderer _deviceType = kUnityGfxRendererNull;
+MessageFunction _messageDelegate = nullptr;
+IUnityInterfaces* _pUnityInterfaces = nullptr;
+IUnityGraphics* _pGraphicsApi = nullptr;
+UnityGfxRenderer _deviceType = kUnityGfxRendererNull;
+HGLRC _unityContext = nullptr;
 std::vector<Window*> _windows;
 
-HGLRC _unityContext = nullptr;
-HDC _unityDevice = nullptr;
-
-void Log(std::string message)
+void Log(const std::string& message)
 {
 	if (_messageDelegate == nullptr)
 	{
@@ -22,6 +20,33 @@ void Log(std::string message)
 
 	_messageDelegate(message.c_str());
 }
+
+#ifdef _WIN32
+HWND _pUnityWindowHandle = nullptr;
+
+BOOL EnumWindowsProc(HWND hWnd, LPARAM lParam)
+{
+	char className[32];
+	GetClassName(hWnd, className, 32);
+	if (std::string(className) == "UnityWndClass")
+	{
+		_pUnityWindowHandle = hWnd;
+		return false;
+	}
+	return true;
+}
+
+HWND GetUnityWindowHandle()
+{
+	if (_pUnityWindowHandle == nullptr)
+	{
+		const unsigned int threadId = GetCurrentThreadId();
+		EnumThreadWindows(threadId, EnumWindowsProc, 0);
+	}
+
+	return _pUnityWindowHandle;
+}
+#endif
 
 extern "C"
 {
@@ -34,7 +59,6 @@ extern "C"
 			if (_deviceType == kUnityGfxRendererOpenGLCore)
 			{
 				_unityContext = wglGetCurrentContext();
-				_unityDevice = wglGetCurrentDC();
 
 				glewExperimental = GL_TRUE;
 				if (glewInit() != GLEW_OK)
@@ -71,11 +95,19 @@ extern "C"
 		_pGraphicsApi = nullptr;
 	}
 
-	void InitPlugin(MessageFunction messageDelegate, CloseFunction closeDelegate, ResizeFunction resizeDelegate)
+	void InitPlugin(
+		MessageFunction messageDelegate, 
+		CloseFunction closeDelegate, 
+		ResizeFunction resizeDelegate, 
+		MouseUpdateFuncton mouseDelegate,
+		MoveFunction moveDelegate
+	)
 	{
 		_messageDelegate = messageDelegate;
 		Window::CloseDelegate = closeDelegate;
 		Window::ResizeDelegate = resizeDelegate;
+		Window::MouseDelegate = mouseDelegate;
+		Window::MoveDelegate = moveDelegate;
 
 		if (SDL_Init(SDL_INIT_VIDEO) < 0)
 		{
@@ -94,21 +126,46 @@ extern "C"
 		SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 0);
 	}
 
-	void UpdateWindows()
+	void ForwardWindowEvent(const SDL_Event& event)
 	{
+		Window* targetWindow = nullptr;
 		for (auto it = _windows.begin(); it != _windows.end(); ++it)
 		{
 			Window* window = *it;
-			if (!window->Render())
+			if (window->ID == event.window.windowID)
 			{
-				return;
+				targetWindow = window;
+				break;
 			}
+		}
+
+		if (targetWindow != nullptr)
+		{
+			targetWindow->HandleEvent(event);
+		}
+	}
+
+	void UpdateWindows()
+	{
+		SDL_Event event;
+		while (SDL_PollEvent(&event) != 0)
+		{
+			if (event.type == SDL_WINDOWEVENT)
+			{
+				ForwardWindowEvent(event);
+			}
+		}
+
+		for (auto it = _windows.begin(); it != _windows.end(); ++it)
+		{
+			Window* window = *it;
+			window->Render();
 		}
 	}
 		
 	Window* CreateNewWindow(const char* title, int width, int height, bool resizable, unsigned int textureHandle)
 	{
-		Window* window = new Window(std::string(title), _unityContext, _unityDevice, width, height, resizable, textureHandle);
+		Window* window = new Window(std::string(title), _unityContext, width, height, resizable, textureHandle);
 		if (!window->CreateContext())
 		{
 			delete window;
@@ -126,8 +183,33 @@ extern "C"
 			return;
 		}
 
-		_windows.erase(std::remove(_windows.begin(), _windows.end(), window), _windows.end());
+		const auto windowIndex = std::find(_windows.begin(), _windows.end(), window);
+		if (windowIndex != _windows.end())
+		{
+			_windows.erase(windowIndex);
+		}
+
 		delete window;
+	}
+
+	void SetWindowPosition(Window* windowHandle, int x, int y)
+	{
+		if (windowHandle == nullptr)
+		{
+			return;
+		}
+
+		windowHandle->SetPosition(x, y);
+	}
+
+	void DragWindow(Window* windowHandle)
+	{
+		if (windowHandle == nullptr)
+		{
+			return;
+		}
+
+		windowHandle->Drag();
 	}
 
 	void ShutdownPlugin()
