@@ -45,10 +45,29 @@ public class ExternalWindow : IDisposable
 
     internal IntPtr Resize(int width, int height)
     {
-        if (RenderTexture.width != width || RenderTexture.height != height)
+        if (RenderTexture.width == width && RenderTexture.height == height)
         {
-            Object.Destroy(RenderTexture);
-            RenderTexture = new RenderTexture(width, height, 0, RenderTextureFormat.ARGB32);
+            return RenderTexture.GetNativeDepthBufferPtr();
+        }
+
+        Camera targetCamera = null;
+        Camera[] cameras = Object.FindObjectsOfType<Camera>();
+        for (int i = 0; i < cameras.Length; ++i)
+        {
+            Camera cam = cameras[i];
+            if (cam.targetTexture == RenderTexture)
+            {
+                targetCamera = cam;
+                break;
+            }
+        }
+
+        Object.Destroy(RenderTexture);
+        RenderTexture = new RenderTexture(width, height, 0, RenderTextureFormat.ARGB32);
+        
+        if (targetCamera != null)
+        {
+            targetCamera.targetTexture = RenderTexture;
         }
 
         return RenderTexture.GetNativeTexturePtr();
